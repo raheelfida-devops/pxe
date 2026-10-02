@@ -1,0 +1,23 @@
+@echo off
+wpeinit
+wpeutil WaitForNetwork
+{% if pxe_smb_auth == 'guest' %}
+net use Z: \\{{ pxe_address }}\installers /user:guest "" /persistent:no
+{% else %}
+echo Enter the PXE installation share password when prompted.
+net use Z: \\{{ pxe_address }}\installers /user:{{ pxe_smb_user }} * /persistent:no
+{% endif %}
+if errorlevel 1 goto failed
+pushd Z:\{{ item.id }}
+if errorlevel 1 goto failed
+if exist sources\setup.exe (
+  sources\setup.exe
+) else (
+  setup.exe
+)
+popd
+goto shell
+:failed
+echo Network source connection failed. Check ipconfig, NIC drivers and credentials.
+:shell
+cmd.exe

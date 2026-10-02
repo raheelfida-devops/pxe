@@ -1,0 +1,192 @@
+---
+- name: Mount shared ISO collection read-only when requested
+  ansible.posix.mount:
+    path: "{{ pxe_iso_dir }}"
+    src: "{{ pxe_iso_source }}"
+    fstype: "{{ 'vboxsf' if pxe_iso_mode == 'vboxsf' else 'nfs' }}"
+    opts: "{{ 'ro,uid=0,gid=0,dmode=0755,fmode=0644,nofail,x-systemd.automount' if pxe_iso_mode == 'vboxsf' else pxe_iso_nfs_options }}"
+    state: mounted
+  when: pxe_iso_mode != 'directory'
+
+- name: Inspect selected source ISOs
+  ansible.builtin.stat:
+    path: "{{ pxe_iso_dir }}/{{ item.iso }}"
+    get_checksum: false
+  loop: "{{ pxe_media }}"
+  loop_control:
+    label: "{{ item.iso }}"
+  register: pxe_iso_stats
+
+- name: Require selected media to exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg | default(false)
+    fail_msg: "Missing ISO {{ item.item.iso }}. Populate pxe_iso_dir or reduce pxe_media."
+  loop: "{{ pxe_iso_stats.results }}"
+  loop_control:
+    label: "{{ item.item.iso }}"
+  when: not ansible_check_mode
+
+- name: Create media and boot directories
+  ansible.builtin.file:
+    path: "{{ pxe_root }}/{{ item.0 }}/{{ item.1.id }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop: "{{ ['media', 'boot'] | product(pxe_media) | list }}"
+  loop_control:
+    label: "{{ item.0 }}/{{ item.1.id }}"
+
+- name: Persist read-only ISO loop mounts
+  ansible.posix.mount:
+    path: "{{ pxe_root }}/media/{{ item.id }}"
+    src: "{{ pxe_iso_dir }}/{{ item.iso }}"
+    fstype: auto
+    opts: ro,loop,nofail
+    state: mounted
+  loop: "{{ pxe_media }}"
+  loop_control:
+    label: "{{ item.id }}"
+  when: not ansible_check_mode
+
+- name: Install idempotent media preparation helper
+  ansible.builtin.copy:
+    src: prepare_assets.py
+    dest: /usr/local/sbin/pxe-prepare-assets
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Prepare canonical Ubuntu and Windows boot assets
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/pxe-prepare-assets
+      - "{{ item.kind }}"
+      - "{{ pxe_root }}/media/{{ item.id }}"
+      - "{{ pxe_root }}/boot/{{ item.id }}"
+  loop: "{{ pxe_media }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: pxe_asset_prepare
+  changed_when: "pxe_asset_prepare.stdout | trim == 'changed=true'"
+  when: not ansible_check_mode
+
+- name: Copy recovered HTTP-capable BIOS loader and pinned wimboot
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/files/recovered/{{ item }}"
+    dest: "{{ pxe_root }}/{{ 'tftp' if item == 'undionly.kpxe' else 'boot' }}/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [undionly.kpxe, wimboot]
+
+- name: Download an official UEFI loader
+  ansible.builtin.get_url:
+    url: "{{ pxe_uefi_url }}"
+    checksum: "{{ pxe_uefi_checksum | default(omit, true) }}"
+    dest: "{{ pxe_root }}/tftp/{{ pxe_uefi_loader }}"
+    owner: root
+    group: root
+    mode: '0644'
+    timeout: 60
+    force: false
+  register: pxe_uefi_download
+  retries: 3
+  delay: 5
+  until: pxe_uefi_download is succeeded
+
+- name: Create Debian network installer directory
+  ansible.builtin.file:
+    path: "{{ pxe_root }}/boot/debian13-network"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: pxe_debian_enabled | bool
+
+- name: Install pinned recovered Debian netboot assets
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/files/recovered/debian13-network/{{ item }}"
+    dest: "{{ pxe_root }}/boot/debian13-network/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [vmlinuz, initrd.gz]
+  when: pxe_debian_enabled | bool
+
+- name: Install explicit media mount helper
+  ansible.builtin.template:
+    src: mount-media.sh.j2
+    dest: /usr/local/sbin/pxe-mount-media
+    owner: root
+    group: root
+    mode: '0755'
+  notify: Restart PXE media
+
+- name: Install media persistence unit
+  ansible.builtin.template:
+    src: media.service.j2
+    dest: /etc/systemd/system/pxe-media.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart PXE media
+
+- name: Render each installer candidate script
+  ansible.builtin.template:
+    src: "{{ item.kind }}.ipxe.j2"
+    dest: "{{ pxe_root }}/boot/{{ item.id }}/boot.ipxe"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ pxe_media }}"
+  loop_control:
+    label: "{{ item.id }}"
+
+- name: Render Windows launcher scripts without credentials
+  ansible.builtin.template:
+    src: install-windows.bat.j2
+    dest: "{{ pxe_root }}/boot/{{ item.id }}/install.bat"
+    owner: root
+    group: root
+    mode: '0644'
+    newline_sequence: '\r\n'
+  loop: "{{ pxe_media | selectattr('kind', 'equalto', 'windows') | list }}"
+  loop_control:
+    label: "{{ item.id }}"
+
+- name: Install corrected WinPE shell configuration
+  ansible.builtin.copy:
+    dest: "{{ pxe_root }}/boot/winpeshl.ini"
+    content: "[LaunchApps]\r\n%SYSTEMROOT%\\System32\\cmd.exe, /c %SYSTEMROOT%\\System32\\install.bat\r\n"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Render Debian mirror-based installer
+  ansible.builtin.template:
+    src: debian.ipxe.j2
+    dest: "{{ pxe_root }}/boot/debian13-network/boot.ipxe"
+    owner: root
+    group: root
+    mode: '0644'
+  when: pxe_debian_enabled | bool
+
+- name: Render local hard-disk boot script
+  ansible.builtin.template:
+    src: localboot.ipxe.j2
+    dest: "{{ pxe_root }}/boot/localboot.ipxe"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Render menu with explicit lab or validated production entries
+  ansible.builtin.template:
+    src: menu.ipxe.j2
+    dest: "{{ pxe_root }}/boot/menu.ipxe"
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true

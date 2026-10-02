@@ -1,0 +1,74 @@
+---
+- name: Save full ISO and disk-image inventory without claiming compatibility
+  ansible.builtin.find:
+    paths: "{{ pxe_iso_dir }}"
+    file_type: file
+    recurse: false
+  register: pxe_inventory
+  when: not ansible_check_mode
+
+- name: Publish media identity and readiness inventory
+  ansible.builtin.copy:
+    dest: /var/lib/pxe/inventory.json
+    content: >-
+      {{ {'source_files': pxe_inventory.files | map(attribute='path') | list,
+          'configured_entries': pxe_media,
+          'debian_mode': 'network-installer-not-local-ISO',
+          'client_boot_validation': 'pending-on-this-new-VM',
+          'log_file': pxe_log_file} | to_nice_json }}
+    owner: root
+    group: root
+    mode: '0644'
+  when: not ansible_check_mode
+
+- name: Verify menu can be retrieved from the PXE address
+  ansible.builtin.uri:
+    url: "http://{{ pxe_address }}/boot/menu.ipxe"
+    return_content: true
+    status_code: 200
+  register: pxe_menu_response
+  when: not ansible_check_mode
+
+- name: Check retrieved menu format
+  ansible.builtin.assert:
+    that: pxe_menu_response.content.startswith('#!ipxe')
+  when: not ansible_check_mode
+
+- name: Verify all configured media mounts are read-only
+  ansible.builtin.command:
+    argv: [findmnt, -no, OPTIONS, --mountpoint, "{{ pxe_root }}/media/{{ item.id }}"]
+  register: pxe_mount_check
+  changed_when: false
+  failed_when: "pxe_mount_check.rc != 0 or 'ro' not in pxe_mount_check.stdout.split(',')"
+  loop: "{{ pxe_media }}"
+  loop_control:
+    label: "{{ item.id }}"
+  when: not ansible_check_mode
+
+- name: Create a unique central logging probe for this run
+  ansible.builtin.set_fact:
+    pxe_log_probe: "PXE_CENTRAL_LOG_CHECK-{{ ansible_facts.date_time.iso8601_micro }}"
+  when: not ansible_check_mode
+
+- name: Exercise the central PXE log collector
+  ansible.builtin.command:
+    argv: [logger, -p, local5.notice, -t, pxe-verify, "{{ pxe_log_probe }}"]
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Verify central log receives the test event
+  ansible.builtin.command:
+    argv: [grep, -F, --, "{{ pxe_log_probe }}", "{{ pxe_log_file }}"]
+  register: pxe_log_check
+  changed_when: false
+  retries: 5
+  delay: 1
+  until: pxe_log_check.rc == 0
+  when: not ansible_check_mode
+
+- name: Explain remaining client acceptance work
+  ansible.builtin.debug:
+    msg: >-
+      Server assets and HTTP/logging checks complete. BIOS, UEFI, NFS client media
+      discovery, WinPE/SMB/disk-selection and restart persistence still require
+      disposable-client testing on this VM. Follow README.md. Logs: {{ pxe_log_file }}.

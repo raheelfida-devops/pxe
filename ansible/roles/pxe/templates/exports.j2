@@ -1,0 +1,3 @@
+{% for medium in pxe_media if medium.kind == 'ubuntu' %}
+{{ pxe_root }}/media/{{ medium.id }} {{ pxe_subnet }}(ro,sync,no_subtree_check,root_squash)
+{% endfor %}

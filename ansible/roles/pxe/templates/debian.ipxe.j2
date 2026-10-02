@@ -1,0 +1,5 @@
+#!ipxe
+set assets http://{{ pxe_address }}/boot/debian13-network
+kernel ${assets}/vmlinuz initrd=initrd.gz netcfg/choose_interface=auto mirror/country=manual mirror/suite={{ pxe_debian_suite }} mirror/udeb/suite={{ pxe_debian_suite }} mirror/protocol=http mirror/http/hostname={{ pxe_debian_mirror }} mirror/http/directory={{ pxe_debian_mirror_path }} --- || exit
+initrd ${assets}/initrd.gz initrd.gz || exit
+boot

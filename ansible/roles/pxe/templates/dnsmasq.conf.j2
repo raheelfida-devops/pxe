@@ -1,0 +1,30 @@
+interface={{ pxe_interface }}
+bind-dynamic
+listen-address={{ pxe_address }}
+no-resolv
+{% for server in pxe_dns_upstream %}
+server={{ server }}
+{% endfor %}
+domain={{ pxe_domain }}
+domain-needed
+bogus-priv
+dhcp-range={{ pxe_dhcp_start }},{{ pxe_dhcp_end }},{{ pxe_netmask }},12h
+dhcp-option=option:dns-server,{{ pxe_address }}
+{% if pxe_enable_nat | bool %}
+dhcp-option=option:router,{{ pxe_address }}
+{% else %}
+dhcp-option=option:router
+{% endif %}
+dhcp-leasefile=/var/lib/misc/dnsmasq.leases
+enable-tftp
+tftp-root={{ pxe_root }}/tftp
+log-dhcp
+log-queries
+log-facility=local5
+dhcp-match=set:bios,option:client-arch,0
+dhcp-match=set:efi64,option:client-arch,7
+dhcp-match=set:efi64,option:client-arch,9
+dhcp-match=set:ipxe-http,175,19
+dhcp-boot=tag:!ipxe-http,tag:bios,undionly.kpxe,,{{ pxe_address }}
+dhcp-boot=tag:!ipxe-http,tag:efi64,{{ pxe_uefi_loader }},,{{ pxe_address }}
+dhcp-boot=tag:ipxe-http,http://{{ pxe_address }}/boot/menu.ipxe

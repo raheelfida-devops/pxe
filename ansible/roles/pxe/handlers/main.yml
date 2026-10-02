@@ -1,0 +1,53 @@
+---
+- name: Restart journald
+  ansible.builtin.systemd_service:
+    name: systemd-journald
+    state: restarted
+
+- name: Restart rsyslog
+  ansible.builtin.systemd_service:
+    name: rsyslog
+    state: restarted
+    enabled: true
+
+- name: Restart PXE firewall
+  ansible.builtin.systemd_service:
+    name: pxe-firewall
+    daemon_reload: true
+    state: restarted
+    enabled: true
+
+- name: Restart PXE media
+  ansible.builtin.systemd_service:
+    name: pxe-media
+    daemon_reload: true
+    state: restarted
+    enabled: true
+
+- name: Restart NFS
+  ansible.builtin.systemd_service:
+    name: nfs-server
+    daemon_reload: true
+    state: restarted
+    enabled: true
+
+- name: Restart dnsmasq
+  ansible.builtin.systemd_service:
+    name: dnsmasq
+    daemon_reload: true
+    state: restarted
+    enabled: true
+
+- name: Restart nginx
+  ansible.builtin.systemd_service:
+    name: nginx
+    daemon_reload: true
+    state: restarted
+    enabled: true
+
+- name: Restart smbd
+  ansible.builtin.systemd_service:
+    name: smbd
+    daemon_reload: true
+    state: restarted
+    enabled: true

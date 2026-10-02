@@ -1,0 +1,61 @@
+---
+- name: Validate deployment inputs before making changes
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Install PXE packages without automatically starting daemons
+  ansible.builtin.apt:
+    name:
+      - dnsmasq
+      - nginx
+      - samba
+      - smbclient
+      - nfs-kernel-server
+      - nfs-common
+      - nftables
+      - rsyslog
+      - logrotate
+      - curl
+      - ca-certificates
+      - python3
+      - tcpdump
+      - wimtools
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+
+- name: Create owned PXE directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "{{ pxe_root }}"
+    - "{{ pxe_root }}/boot"
+    - "{{ pxe_root }}/tftp"
+    - "{{ pxe_root }}/media"
+    - "{{ pxe_iso_dir }}"
+    - /var/lib/pxe
+    - /etc/pxe
+    - /etc/systemd/journald.conf.d
+    - /etc/nfs.conf.d
+
+- name: Configure central runtime logging
+  ansible.builtin.import_tasks: logging.yml
+
+- name: Configure secondary network and isolated firewall
+  ansible.builtin.import_tasks: network.yml
+
+- name: Mount source media and prepare installer assets
+  ansible.builtin.import_tasks: media.yml
+
+- name: Configure and validate PXE daemons
+  ansible.builtin.import_tasks: services.yml
+
+- name: Activate pending validated configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify server endpoints and persistence configuration
+  ansible.builtin.import_tasks: verify.yml

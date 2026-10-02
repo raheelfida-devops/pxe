@@ -1,0 +1,13 @@
+[Unit]
+Description=PXE isolated firewall and NAT
+After=network-online.target nftables.service
+Wants=network-online.target
+Before=dnsmasq.service nginx.service smbd.service nfs-server.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pxe-apply-firewall
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

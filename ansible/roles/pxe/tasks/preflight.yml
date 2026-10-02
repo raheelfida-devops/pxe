@@ -1,0 +1,129 @@
+---
+- name: Require an explicitly selected new isolated target
+  ansible.builtin.assert:
+    that:
+      - ansible_host | default('CHANGE_ME') != 'CHANGE_ME'
+      - pxe_lab_isolated | bool
+      - pxe_dedicated_vm | bool
+      - ansible_facts.os_family == 'Debian'
+      - ansible_facts.distribution in ['Ubuntu', 'Debian']
+      - ansible_facts.service_mgr == 'systemd'
+      - >-
+        (ansible_facts.distribution == 'Ubuntu' and
+        ansible_facts.distribution_version is version('22.04', '>=')) or
+        (ansible_facts.distribution == 'Debian' and
+        ansible_facts.distribution_major_version | int >= 12)
+      - pxe_interface in ansible_facts.interfaces
+      - pxe_uplink in ansible_facts.interfaces
+      - pxe_interface != pxe_uplink
+      - pxe_interface != ansible_facts.default_ipv4.interface | default('')
+      - pxe_iso_mode in ['directory', 'vboxsf', 'nfs']
+      - pxe_iso_mode != 'nfs' or 'ro' in pxe_iso_nfs_options.split(',')
+      - pxe_menu_mode in ['lab', 'production']
+      - pxe_menu_default in ['localboot', 'exit']
+      - pxe_menu_timeout | int > 0
+      - pxe_smb_auth in ['authenticated', 'guest']
+      - pxe_root is match('^/[a-zA-Z0-9_/-]+$')
+      - pxe_iso_dir is match('^/[a-zA-Z0-9_/-]+$')
+      - pxe_interface is match('^[a-zA-Z0-9_.:-]+$')
+      - pxe_uplink is match('^[a-zA-Z0-9_.:-]+$')
+      - pxe_uefi_loader in ['snponly.efi', 'ipxe.efi']
+      - pxe_address | pxe_valid_address_plan(pxe_subnet, pxe_prefix, pxe_netmask, pxe_dhcp_start, pxe_dhcp_end)
+      - pxe_smb_user is match('^[a-z_][a-z0-9_-]*$')
+      - pxe_domain is match('^[a-zA-Z0-9.-]+$')
+      - pxe_debian_mirror is match('^[a-zA-Z0-9.-]+$')
+      - pxe_debian_mirror_path is match('^/[a-zA-Z0-9_/-]+$')
+      - pxe_debian_suite is match('^[a-zA-Z0-9_-]+$')
+      - pxe_log_file == '/var/log/pxe.log'
+      - not (pxe_manage_network | bool) or ansible_facts.distribution == 'Ubuntu'
+    fail_msg: >-
+      Select a dedicated NEW Ubuntu 22.04+ or Debian 12+ systemd VM, confirm
+      physical/VirtualBox network isolation, and configure two distinct NICs.
+      Debian requires its secondary static address configured outside this role.
+
+- name: Validate media entries
+  ansible.builtin.assert:
+    that:
+      - item.id is match('^[a-z0-9][a-z0-9-]*$')
+      - item.id not in ['menu', 'localboot', 'debian13-network', 'info', 'shell', 'exit', 'failed']
+      - item.kind in ['ubuntu', 'windows']
+      - item.iso | basename == item.iso
+      - item.iso is match('^[^\r\n]+\.iso$')
+      - item.label is match('^[^\r\n]+$')
+      - item.extra_args | default('') is match('^[^\r\n]*$')
+    fail_msg: Media IDs and ISO filenames must be safe local basenames.
+  loop: "{{ pxe_media }}"
+  loop_control:
+    label: "{{ item.id }}"
+
+- name: Validate configured local UEFI bootloader paths
+  ansible.builtin.assert:
+    that:
+      - item | pxe_valid_efi_path
+    fail_msg: Local bootloader paths must be EFI backslash paths without spaces or command syntax.
+  loop: "{{ pxe_local_efi_paths }}"
+
+- name: Reject duplicate media identifiers
+  ansible.builtin.assert:
+    that:
+      - pxe_media | map(attribute='id') | list | unique | length == pxe_media | length
+
+- name: Require an authenticated Windows share password when Windows is selected
+  ansible.builtin.assert:
+    that:
+      - pxe_smb_password | length >= 12
+      - "'\n' not in pxe_smb_password"
+    fail_msg: Set PXE_SMB_PASSWORD or a Vault-protected pxe_smb_password (12+ characters).
+  when:
+    - pxe_media | selectattr('kind', 'equalto', 'windows') | list | length > 0
+    - pxe_smb_auth == 'authenticated'
+  no_log: true
+
+- name: Require externally configured PXE address when network management is disabled
+  ansible.builtin.command:
+    argv: [ip, -4, -o, address, show, dev, "{{ pxe_interface }}"]
+  register: pxe_existing_address
+  changed_when: false
+  check_mode: false
+  when: not (pxe_manage_network | bool)
+
+- name: Check external address
+  ansible.builtin.assert:
+    that: "(pxe_address ~ '/' ~ pxe_prefix | string) in pxe_existing_address.stdout"
+    fail_msg: Configure the secondary static PXE address first, or enable Ubuntu netplan management.
+  when: not (pxe_manage_network | bool)
+
+- name: Save original dedicated-server configuration once before changes
+  ansible.builtin.command:
+    argv:
+      - tar
+      - --create
+      - --gzip
+      - --file=/var/backups/pxe-before-ansible.tar.gz
+      - --ignore-failed-read
+      - --absolute-names
+      - /etc/netplan
+      - /etc/dnsmasq.conf
+      - /etc/dnsmasq.d
+      - /etc/nginx
+      - /etc/samba
+      - /etc/exports
+      - /etc/exports.d
+      - /etc/nfs.conf
+      - /etc/nfs.conf.d
+      - /etc/fstab
+      - /etc/nftables.conf
+      - /etc/rsyslog.conf
+      - /etc/rsyslog.d
+    creates: /var/backups/pxe-before-ansible.tar.gz
+  register: pxe_baseline
+  failed_when: pxe_baseline.rc | default(0) > 1
+  changed_when: pxe_baseline.changed
+
+- name: Protect configuration backup from other accounts
+  ansible.builtin.file:
+    path: /var/backups/pxe-before-ansible.tar.gz
+    owner: root
+    group: root
+    mode: '0600'
+  when: not ansible_check_mode

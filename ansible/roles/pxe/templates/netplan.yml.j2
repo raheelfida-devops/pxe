@@ -1,0 +1,11 @@
+network:
+  version: 2
+  ethernets:
+    {{ pxe_interface }}:
+      renderer: networkd
+      dhcp4: false
+      dhcp6: false
+      accept-ra: false
+      addresses: [{{ pxe_address }}/{{ pxe_prefix }}]
+      optional: true
+      ignore-carrier: true

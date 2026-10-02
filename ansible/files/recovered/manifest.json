@@ -1,0 +1,31 @@
+{
+  "snapshot": "2026-10-02 PXE recovery archive",
+  "source_session": "01a0e8dd-47fa-7361-905e-c4ee96e7cc4e",
+  "note": "Historical boot assets only; not proof of client compatibility.",
+  "files": [
+    {
+      "file": "debian13-network/vmlinuz",
+      "sha256": "2b2358b37674d2505350528875bb17afae2a36522a9e8a9417eaca65a7da0e08",
+      "size": 12142528,
+      "origin": "srv/pxe/boot/debian13-network/vmlinuz"
+    },
+    {
+      "file": "debian13-network/initrd.gz",
+      "sha256": "57303d157cffce3fa402301667fbc9b2280aa7372082b081e777375ae49da5f2",
+      "size": 40723557,
+      "origin": "srv/pxe/boot/debian13-network/initrd.gz"
+    },
+    {
+      "file": "undionly.kpxe",
+      "sha256": "840b05685a6146d0a26caf93316194b006d10f0f3e09b13e0a2e0292ab30af4f",
+      "size": 72379,
+      "origin": "srv/pxe/tftp/undionly.kpxe"
+    },
+    {
+      "file": "wimboot",
+      "sha256": "5f067ccdc4d084d5bf77b6c853bd0f8402dfc2b4cd1b103d358993ae97fae8e3",
+      "size": 76064,
+      "origin": "srv/pxe/boot/wimboot"
+    }
+  ]
+}

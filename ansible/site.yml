@@ -1,0 +1,8 @@
+---
+- name: Build a dedicated PXE server
+  hosts: pxe_servers
+  become: true
+  gather_facts: true
+  serial: 1
+  roles:
+    - role: pxe

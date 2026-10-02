@@ -1,0 +1,11 @@
+---
+- name: Update local-disk boot and central logging on the existing PXE server
+  hosts: pxe_existing
+  become: true
+  gather_facts: true
+  serial: 1
+  tasks:
+    - name: Apply only the running-server update tasks
+      ansible.builtin.import_role:
+        name: pxe
+        tasks_from: update_running

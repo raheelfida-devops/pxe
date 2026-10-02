@@ -1,0 +1,15 @@
+---
+all:
+  children:
+    pxe_servers:
+      hosts:
+        pxe_new:
+          # Replace these values; this example never points to the running old VM.
+          ansible_host: CHANGE_ME
+          ansible_port: 22
+          ansible_user: CHANGE_ME
+          pxe_lab_isolated: false
+          pxe_dedicated_vm: false
+          pxe_interface: enp0s8
+          pxe_uplink: enp0s3
+          pxe_iso_mode: directory

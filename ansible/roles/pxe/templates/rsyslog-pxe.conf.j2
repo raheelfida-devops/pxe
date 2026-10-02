@@ -1,0 +1,33 @@
+# Managed by Ansible. Match PXE records without suppressing normal system logs.
+# nginx sends access/error records to /dev/log with these distinct tags.
+# PXE helper services must use a SyslogIdentifier beginning with pxe-.
+if (
+    $programname == 'dnsmasq' or
+    $programname == 'dnsmasq-dhcp' or
+    $programname == 'dnsmasq-tftp' or
+    $programname == 'nginx' or
+    $programname == 'pxe-nginx-access' or
+    $programname == 'pxe-nginx-error' or
+    $programname == 'smbd' or
+    $programname == 'nmbd' or
+    $programname == 'rpc.mountd' or
+    $programname == 'rpc.statd' or
+    $programname == 'rpc.nfsd' or
+    $programname == 'rpcbind' or
+    $programname == 'nfsidmap' or
+    $programname == 'nfsd' or
+    $programname startswith 'pxe-' or
+    ($programname == 'kernel' and
+        ($msg contains 'PXE' or $msg contains 'nfsd:' or $msg contains 'NFSD:' or $msg contains 'NFS:')) or
+    ($programname == 'systemd' and
+        re_match($msg, '(dnsmasq|nginx|smbd|nmbd|nfs-server|nfs-kernel-server|rpcbind|rpc-mountd|rpc-statd|pxe-[[:alnum:]_.-]+)'))
+) then {
+    action(
+        type="omfile"
+        file="{{ pxe_log_file }}"
+        template="RSYSLOG_FileFormat"
+        fileOwner="syslog"
+        fileGroup="adm"
+        fileCreateMode="0640"
+    )
+}

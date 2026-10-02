@@ -1,0 +1,33 @@
+# Only these role-owned tables are replaced by pxe-apply-firewall.
+table inet pxe_filter {
+  chain input {
+    type filter hook input priority -5; policy accept;
+    # Keep replies to management DNS/HTTP and established traffic intact.
+    ct state established,related accept
+    iifname "lo" accept
+    iifname "{{ pxe_interface }}" udp sport 68 udp dport 67 accept
+    iifname "{{ pxe_interface }}" ip saddr {{ pxe_subnet }} tcp dport { 53, 80, 111, 445, 2049, 20048 } accept
+    # NFSv3/casper may use UDP even when proto=tcp is requested. TFTP uses
+    # negotiated high ports; limit this allowance to the isolated client NIC.
+    iifname "{{ pxe_interface }}" ip saddr {{ pxe_subnet }} udp dport { 53, 69, 111, 2049, 20048, 1024-65535 } accept
+    tcp dport { 53, 80, 111, 139, 445, 2049, 20048 } drop
+    udp dport { 53, 67, 69, 111, 137, 138, 2049, 20048 } drop
+  }
+  chain forward {
+    type filter hook forward priority -5; policy accept;
+{% if pxe_enable_nat | bool %}
+    iifname "{{ pxe_interface }}" oifname "{{ pxe_uplink }}" ip saddr {{ pxe_subnet }} accept
+    iifname "{{ pxe_uplink }}" oifname "{{ pxe_interface }}" ip daddr {{ pxe_subnet }} ct state established,related accept
+{% endif %}
+    iifname "{{ pxe_interface }}" drop
+    oifname "{{ pxe_interface }}" drop
+  }
+}
+{% if pxe_enable_nat | bool %}
+table ip pxe_nat {
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    ip saddr {{ pxe_subnet }} oifname "{{ pxe_uplink }}" masquerade
+  }
+}
+{% endif %}

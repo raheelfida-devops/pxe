@@ -1,0 +1,113 @@
+---
+- name: Require an existing supported PXE server and safe parameters
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution in ['Ubuntu', 'Debian']
+      - ansible_facts.service_mgr == 'systemd'
+      - pxe_root is match('^/srv/[a-zA-Z0-9_/-]+$')
+      - pxe_interface in ansible_facts.interfaces
+      - pxe_address | pxe_valid_address_plan(pxe_subnet, pxe_prefix, pxe_netmask, pxe_dhcp_start, pxe_dhcp_end)
+      - pxe_menu_default in ['localboot', 'exit']
+      - pxe_menu_timeout | int > 0
+      - pxe_log_file == '/var/log/pxe.log'
+
+- name: Validate local EFI paths
+  ansible.builtin.assert:
+    that: item | pxe_valid_efi_path
+  loop: "{{ pxe_local_efi_paths }}"
+
+- name: Read existing menu before modifying anything
+  ansible.builtin.slurp:
+    src: "{{ pxe_root }}/boot/menu.ipxe"
+  register: pxe_live_menu
+
+- name: Require the expected existing menu structure
+  ansible.builtin.assert:
+    that:
+      - (pxe_live_menu.content | b64decode).startswith('#!ipxe')
+      - "':menu' in (pxe_live_menu.content | b64decode)"
+      - "':failed' in (pxe_live_menu.content | b64decode)"
+
+- name: Install logging tools without starting new daemons automatically
+  ansible.builtin.apt:
+    name: [rsyslog, logrotate]
+    state: present
+    policy_rc_d: 101
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Configure central runtime log
+  ansible.builtin.import_tasks: logging.yml
+
+- name: Publish local hard-disk boot script
+  ansible.builtin.template:
+    src: localboot.ipxe.j2
+    dest: "{{ pxe_root }}/boot/localboot.ipxe"
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+
+- name: Install menu-preserving update helper
+  ansible.builtin.copy:
+    src: patch_menu.py
+    dest: /usr/local/sbin/pxe-patch-menu
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Stage menu update in a temporary file
+  ansible.builtin.tempfile:
+    state: file
+    prefix: pxe-menu-
+  register: pxe_menu_staging
+  when: not ansible_check_mode
+
+- name: Patch and publish existing menu with backup
+  when: not ansible_check_mode
+  block:
+    - name: Generate updated menu without replacing installer entries
+      ansible.builtin.command:
+        argv:
+          - /usr/local/sbin/pxe-patch-menu
+          - "{{ pxe_root }}/boot/menu.ipxe"
+          - "{{ pxe_menu_staging.path }}"
+          - --address
+          - "{{ pxe_address }}"
+          - --default
+          - "{{ pxe_menu_default }}"
+          - --timeout
+          - "{{ pxe_menu_timeout | string }}"
+      changed_when: false
+
+    - name: Publish patched menu atomically
+      ansible.builtin.copy:
+        src: "{{ pxe_menu_staging.path }}"
+        remote_src: true
+        dest: "{{ pxe_root }}/boot/menu.ipxe"
+        owner: root
+        group: root
+        mode: '0644'
+        backup: true
+  always:
+    - name: Remove menu staging file
+      ansible.builtin.file:
+        path: "{{ pxe_menu_staging.path }}"
+        state: absent
+
+- name: Activate the central log collector
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify live server serves the updated menu
+  ansible.builtin.uri:
+    url: "http://{{ pxe_address }}/boot/menu.ipxe"
+    return_content: true
+  register: pxe_updated_menu
+  when: not ansible_check_mode
+
+- name: Verify local hard-disk menu entry is active
+  ansible.builtin.assert:
+    that:
+      - "'item localboot Boot from local hard disk' in pxe_updated_menu.content"
+      - "('choose --default ' ~ pxe_menu_default) in pxe_updated_menu.content"
+  when: not ansible_check_mode

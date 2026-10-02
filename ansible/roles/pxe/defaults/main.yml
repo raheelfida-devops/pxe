@@ -1,0 +1,80 @@
+---
+pxe_lab_isolated: false
+pxe_dedicated_vm: false
+pxe_interface: enp0s8
+pxe_uplink: enp0s3
+pxe_address: 192.168.77.1
+pxe_prefix: 24
+pxe_subnet: 192.168.77.0/24
+pxe_netmask: 255.255.255.0
+pxe_dhcp_start: 192.168.77.100
+pxe_dhcp_end: 192.168.77.200
+pxe_domain: pxe.lab
+pxe_dns_upstream: [1.1.1.1, 8.8.8.8]
+pxe_enable_nat: true
+# Ubuntu netplan: configure only the dedicated client NIC. Debian defaults to
+# preconfigured networking; override false on Ubuntu too if already configured.
+pxe_manage_network: "{{ ansible_facts.distribution == 'Ubuntu' }}"
+pxe_root: /srv/pxe
+pxe_iso_dir: "{{ pxe_root }}/iso"
+pxe_iso_mode: directory  # directory (prepopulated), vboxsf, or nfs
+pxe_iso_source: ISOs
+pxe_iso_nfs_options: ro,hard,_netdev
+pxe_log_file: /var/log/pxe.log
+pxe_menu_mode: lab  # lab shows candidate entries; production only validated ones
+pxe_menu_default: localboot
+pxe_menu_timeout: 30000
+# UEFI tries these existing on-disk bootloaders in order; no disk is written.
+pxe_local_efi_paths:
+  - '\EFI\Microsoft\Boot\bootmgfw.efi'
+  - '\EFI\ubuntu\shimx64.efi'
+  - '\EFI\ubuntu\grubx64.efi'
+  - '\EFI\debian\shimx64.efi'
+  - '\EFI\debian\grubx64.efi'
+  - '\EFI\BOOT\BOOTX64.EFI'
+pxe_smb_user: pxeinstall
+pxe_smb_password: "{{ lookup('ansible.builtin.env', 'PXE_SMB_PASSWORD') }}"
+pxe_smb_rotate_password: false
+pxe_smb_auth: authenticated  # guest explicitly reproduces the isolated old lab
+pxe_uefi_loader: snponly.efi
+pxe_uefi_url: https://boot.ipxe.org/snponly.efi
+pxe_uefi_checksum: ''  # optional sha256:<digest> for pinned binary
+pxe_debian_enabled: true
+pxe_debian_mirror: deb.debian.org
+pxe_debian_mirror_path: /debian
+pxe_debian_suite: trixie
+pxe_debian_validated: false
+pxe_media:
+  - id: ubuntu24-server
+    label: Ubuntu 24.04.2 Server
+    iso: ubuntu-24.04.2-live-server-amd64.iso
+    kind: ubuntu
+    validated: false
+    extra_args: ''
+  - id: ubuntu24-desktop
+    label: Ubuntu 24.04.4 Desktop
+    iso: ubuntu-24.04.4-desktop-amd64.iso
+    kind: ubuntu
+    validated: false
+    extra_args: ''
+  - id: ubuntu26-desktop
+    label: Ubuntu 26.04 Desktop
+    iso: ubuntu-26.04-desktop-amd64.iso
+    kind: ubuntu
+    validated: false
+    extra_args: ''
+  - id: win10-22h2
+    label: Windows 10 22H2 x64
+    iso: Win10_22H2_English_x64v1.iso
+    kind: windows
+    validated: false
+  - id: win10-2019
+    label: Windows 10 Pro 2019
+    iso: Windows10Pro18Jan19.iso
+    kind: windows
+    validated: false
+  - id: win7
+    label: Windows 7 Professional x64
+    iso: en_windows_7_professional_x64_dvd.iso
+    kind: windows
+    validated: false

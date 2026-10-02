@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+{% for medium in pxe_media %}
+mountpoint -q {{ (pxe_root ~ '/media/' ~ medium.id) | quote }} || mount {{ (pxe_root ~ '/media/' ~ medium.id) | quote }}
+{% endfor %}
+logger -t pxe-media 'All configured read-only ISO mounts are available'

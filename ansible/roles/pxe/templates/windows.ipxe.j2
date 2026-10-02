@@ -1,0 +1,9 @@
+#!ipxe
+set assets http://{{ pxe_address }}/boot/{{ item.id }}
+kernel http://{{ pxe_address }}/boot/wimboot || exit
+initrd http://{{ pxe_address }}/boot/winpeshl.ini winpeshl.ini || exit
+initrd ${assets}/install.bat install.bat || exit
+initrd ${assets}/BCD BCD || exit
+initrd ${assets}/boot.sdi boot.sdi || exit
+initrd ${assets}/boot.wim boot.wim || exit
+boot

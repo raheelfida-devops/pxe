@@ -1,0 +1,14 @@
+#!ipxe
+# iPXE local-disk boot: https://ipxe.org/cmd/sanboot
+iseq ${platform} efi && goto efi || goto bios
+:bios
+sanboot --no-describe --drive 0x80 || goto failed
+goto failed
+:efi
+{% for filename in pxe_local_efi_paths %}
+sanboot --no-describe --drive 0 --filename {{ filename }} || echo Trying next local EFI bootloader...
+{% endfor %}
+:failed
+echo No matching bootable local hard disk was found, or its bootloader failed.
+echo Use firmware boot selection or configure pxe_local_efi_paths for this OS.
+exit 1

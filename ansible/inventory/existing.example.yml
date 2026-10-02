@@ -1,0 +1,19 @@
+---
+all:
+  children:
+    pxe_existing:
+      hosts:
+        pxe_running:
+          ansible_host: 127.0.0.1
+          ansible_port: 2028
+          ansible_user: it-admin
+          # Fresh password SSH session, matching the original session preference.
+          ansible_ssh_common_args: >-
+            -F /dev/null -o PubkeyAuthentication=no
+            -o PreferredAuthentications=password,keyboard-interactive
+            -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null
+            -o StrictHostKeyChecking=no -o UpdateHostKeys=no
+          pxe_root: /srv/pxe
+          pxe_address: 192.168.77.1
+          pxe_interface: enp0s8
+          pxe_menu_default: localboot

@@ -1,0 +1,69 @@
+---
+- name: Configure the Ubuntu PXE interface without replacing management netplan
+  ansible.builtin.template:
+    src: netplan.yml.j2
+    dest: /etc/netplan/90-pxe.yaml
+    owner: root
+    group: root
+    mode: '0600'
+    backup: true
+  register: pxe_netplan
+  when: pxe_manage_network | bool
+
+- name: Validate all netplan files before applying
+  ansible.builtin.command: netplan generate
+  changed_when: false
+  when:
+    - pxe_manage_network | bool
+    - not ansible_check_mode
+
+- name: Apply changed secondary network configuration
+  ansible.builtin.command: netplan apply
+  changed_when: true
+  when:
+    - pxe_manage_network | bool
+    - pxe_netplan.changed
+    - not ansible_check_mode
+
+- name: Persist forwarding setting
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "{{ '1' if pxe_enable_nat | bool else '0' }}"
+    sysctl_file: /etc/sysctl.d/90-pxe-forward.conf
+    sysctl_set: true
+
+- name: Render isolated firewall tables without flushing other tables
+  ansible.builtin.template:
+    src: firewall.nft.j2
+    dest: /etc/pxe/firewall.nft
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+  notify: Restart PXE firewall
+
+- name: Install atomic scoped firewall loader
+  ansible.builtin.copy:
+    src: apply-firewall.sh
+    dest: /usr/local/sbin/pxe-apply-firewall
+    owner: root
+    group: root
+    mode: '0755'
+  notify: Restart PXE firewall
+
+- name: Install persistent PXE firewall unit
+  ansible.builtin.template:
+    src: firewall.service.j2
+    dest: /etc/systemd/system/pxe-firewall.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart PXE firewall
+
+- name: Start scoped firewall before exposing services
+  ansible.builtin.systemd_service:
+    name: pxe-firewall
+    daemon_reload: true
+    enabled: true
+    state: started
+  when: not ansible_check_mode

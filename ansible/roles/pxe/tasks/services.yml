@@ -1,0 +1,125 @@
+---
+- name: Configure DNS DHCP and TFTP on the isolated interface
+  ansible.builtin.template:
+    src: dnsmasq.conf.j2
+    dest: /etc/dnsmasq.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+    validate: /usr/sbin/dnsmasq --test --conf-file=%s
+  notify: Restart dnsmasq
+
+- name: Configure dedicated nginx with central request/error logs
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+    validate: /usr/sbin/nginx -t -c %s
+  notify: Restart nginx
+
+- name: Create installation share account
+  ansible.builtin.user:
+    name: "{{ pxe_smb_user }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+  when: pxe_smb_auth == 'authenticated'
+
+- name: Check if installation share account is already registered
+  ansible.builtin.command:
+    argv: [pdbedit, -L, -u, "{{ pxe_smb_user }}"]
+  register: pxe_smb_account
+  failed_when: pxe_smb_account.rc not in [0, 1]
+  changed_when: false
+  when:
+    - pxe_smb_auth == 'authenticated'
+    - not ansible_check_mode
+
+- name: Initialize or explicitly rotate installation share password
+  ansible.builtin.command:
+    argv: [smbpasswd, -s, -a, "{{ pxe_smb_user }}"]
+    stdin: "{{ pxe_smb_password }}\n{{ pxe_smb_password }}\n"
+  changed_when: true
+  no_log: true
+  when:
+    - pxe_smb_auth == 'authenticated'
+    - pxe_media | selectattr('kind', 'equalto', 'windows') | list | length > 0
+    - not ansible_check_mode
+    - pxe_smb_account.rc != 0 or pxe_smb_user not in pxe_smb_account.stdout or pxe_smb_rotate_password | bool
+
+- name: Configure read-only SMB2 installation share and syslog
+  ansible.builtin.template:
+    src: smb.conf.j2
+    dest: /etc/samba/smb.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+    validate: /usr/bin/testparm -s %s
+  notify: Restart smbd
+
+- name: Enable NFSv3 TCP and UDP for Casper compatibility
+  ansible.builtin.template:
+    src: nfs.conf.j2
+    dest: /etc/nfs.conf.d/pxe.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+  notify: Restart NFS
+
+- name: Export only Ubuntu mounted media read-only to lab clients
+  ansible.builtin.template:
+    src: exports.j2
+    dest: /etc/exports.d/pxe.exports
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+  notify: Restart NFS
+
+- name: Create service dependency directories
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}.service.d"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop: [dnsmasq, nginx, smbd, nfs-server]
+
+- name: Require media firewall and logging before PXE services start
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item }}.service.d/pxe.conf"
+    content: |
+      [Unit]
+      Requires=pxe-media.service pxe-firewall.service rsyslog.service
+      After=pxe-media.service pxe-firewall.service rsyslog.service network-online.target
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [dnsmasq, nginx, smbd, nfs-server]
+  notify:
+    - Restart dnsmasq
+    - Restart nginx
+    - Restart smbd
+    - Restart NFS
+
+- name: Disable unnecessary legacy NetBIOS listener
+  ansible.builtin.systemd_service:
+    name: nmbd
+    enabled: false
+    state: stopped
+  when: not ansible_check_mode
+
+- name: Start PXE service dependencies
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+    daemon_reload: true
+  loop: [pxe-media, rpcbind, nfs-server, dnsmasq, nginx, smbd]
+  when: not ansible_check_mode

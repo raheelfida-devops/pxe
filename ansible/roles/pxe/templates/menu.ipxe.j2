@@ -1,0 +1,44 @@
+#!ipxe
+set base http://{{ pxe_address }}/boot
+:menu
+menu PXE {{ pxe_menu_mode }} - {{ pxe_address }}
+item localboot Boot from local hard disk
+item exit Return to firmware
+{% for medium in pxe_media if pxe_menu_mode == 'lab' or medium.validated | default(false) %}
+item {{ medium.id }} {{ medium.label }}{{ ' [TEST]' if not medium.validated | default(false) else '' }}
+{% endfor %}
+{% if pxe_debian_enabled | bool and (pxe_menu_mode == 'lab' or pxe_debian_validated | bool) %}
+item debian13-network Debian 13 network installer (mirror required){{ ' [TEST]' if not pxe_debian_validated | bool else '' }}
+{% endif %}
+item info Other media and compatibility information
+item shell iPXE shell
+choose --default {{ pxe_menu_default }} --timeout {{ pxe_menu_timeout }} selected || goto exit
+goto ${selected}
+:localboot
+chain ${base}/localboot.ipxe || goto failed
+goto menu
+{% for medium in pxe_media if pxe_menu_mode == 'lab' or medium.validated | default(false) %}
+:{{ medium.id }}
+chain ${base}/{{ medium.id }}/boot.ipxe || goto failed
+goto menu
+{% endfor %}
+{% if pxe_debian_enabled | bool and (pxe_menu_mode == 'lab' or pxe_debian_validated | bool) %}
+:debian13-network
+chain ${base}/debian13-network/boot.ipxe || goto failed
+goto menu
+{% endif %}
+:info
+echo XP, Longhorn, FreeBSD and OPNsense are inventoried, not proven installers.
+echo Debian DVD is not enabled as an unsigned local mirror.
+echo ISO inventory: http://{{ pxe_address }}/inventory.json
+prompt Press a key to return || goto menu
+goto menu
+:shell
+shell
+goto menu
+:failed
+echo Boot failed. Inspect the error and /var/log/pxe.log on the server.
+prompt Press a key to return || goto menu
+goto menu
+:exit
+exit

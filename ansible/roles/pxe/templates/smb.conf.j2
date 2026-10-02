@@ -1,0 +1,32 @@
+[global]
+    workgroup = WORKGROUP
+    server role = standalone server
+    interfaces = lo {{ pxe_interface }}
+    bind interfaces only = yes
+    smb ports = 445
+    disable netbios = yes
+    server min protocol = SMB2
+    logging = syslog@3
+    log level = 2
+    load printers = no
+    printing = bsd
+    printcap name = /dev/null
+{% if pxe_smb_auth == 'guest' %}
+    map to guest = Bad User
+    guest account = nobody
+{% else %}
+    map to guest = Never
+{% endif %}
+
+[installers]
+    path = {{ pxe_root }}/media
+    read only = yes
+    browseable = no
+    hosts allow = {{ pxe_subnet }} 127.0.0.1
+{% if pxe_smb_auth == 'guest' %}
+    guest ok = yes
+    guest only = yes
+{% else %}
+    guest ok = no
+    valid users = {{ pxe_smb_user }}
+{% endif %}

@@ -1,0 +1,5 @@
+#!ipxe
+set assets http://{{ pxe_address }}/boot/{{ item.id }}
+kernel ${assets}/vmlinuz initrd=initrd boot=casper ip=dhcp netboot=nfs nfsroot={{ pxe_address }}:{{ pxe_root }}/media/{{ item.id }} nfsopts=vers=3,proto=tcp,nolock cloud-config-url=/dev/null {{ item.extra_args | default('') }} --- || exit
+initrd ${assets}/initrd initrd || exit
+boot

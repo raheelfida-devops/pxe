@@ -1,0 +1,7 @@
+/inventory/hosts.yml
+/inventory/host_vars/
+/inventory/group_vars/
+/.ansible/
+/.cache/
+__pycache__/
+*.retry

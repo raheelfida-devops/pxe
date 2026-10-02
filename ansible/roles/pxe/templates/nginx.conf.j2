@@ -1,0 +1,18 @@
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+error_log syslog:server=unix:/dev/log,facility=local5,tag=pxe-nginx-error info;
+events { worker_connections 1024; }
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    sendfile off;
+    access_log syslog:server=unix:/dev/log,facility=local5,tag=pxe-nginx-access combined;
+    server {
+        listen {{ pxe_address }}:80;
+        server_name _;
+        location /boot/ { alias {{ pxe_root }}/boot/; autoindex off; }
+        location /iso/ { alias {{ pxe_iso_dir }}/; autoindex off; }
+        location = /inventory.json { alias /var/lib/pxe/inventory.json; }
+    }
+}

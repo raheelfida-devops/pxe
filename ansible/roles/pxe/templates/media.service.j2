@@ -1,0 +1,14 @@
+[Unit]
+Description=PXE read-only installation media
+RequiresMountsFor={{ pxe_iso_dir }}
+After=network-online.target
+Wants=network-online.target
+Before=nfs-server.service nginx.service smbd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pxe-mount-media
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
