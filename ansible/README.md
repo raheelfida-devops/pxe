@@ -50,7 +50,7 @@ ansible-galaxy collection install -r requirements.yml
 cp inventory/hosts.example.yml inventory/hosts.yml
 ```
 
-The only additional collection is `ansible.posix`. Edit `inventory/hosts.yml` with the **new** VM's SSH host, port and user. For VirtualBox NAT port forwarding, use the host address and its forwarded port; do not reuse the old server's `2028` forwarding rule. Example:
+The only additional collection is `ansible.posix`. Edit `inventory/hosts.yml` with the **new** VM's SSH host, port and user. For VirtualBox NAT port forwarding, use the host address and its forwarded port; do not reuse the old server's `2028` forwarding rule. Example for a VM whose SSH port is forwarded to `127.0.0.1:2029`:
 
 ```yaml
 all:
@@ -60,7 +60,7 @@ all:
         pxe_new:
           ansible_host: 127.0.0.1
           ansible_port: 2029
-          ansible_user: your_new_vm_user
+          ansible_user: pxeadmin
           pxe_lab_isolated: true
           pxe_dedicated_vm: true
           pxe_interface: enp0s8
@@ -70,6 +70,34 @@ all:
 ```
 
 The two flags acknowledge verified isolation and a dedicated VM. This role takes ownership of the main dnsmasq, nginx and Samba configurations; use a fresh VM rather than one hosting unrelated services. SSH host-key checking remains enabled. Establish and verify the SSH connection first; do not disable checking to bypass a mismatched host key.
+
+### Example: run from a controller with an SSH username and password
+
+This example uses SSH user `pxeadmin` and a **fictitious** password such as `PxeLabDemo-ChangeMe123!`. Create your own password on the VM; the example password is not configured by this repository. The account must have SSH access and sudo rights. Change `ansible_host`/`ansible_port` above to your VM's actual management address and SSH port (for a directly reachable VM, use its IP and port `22`). Verify the two interface names, isolation flags, ISO source, and `pxe_media` selection before deploying. For `pxe_iso_mode: directory`, put every selected ISO in `/srv/pxe/iso` on the new VM first.
+
+Run these commands on the **controller**, from the repository root:
+
+```bash
+cd ansible
+ansible-galaxy collection install -r requirements.yml
+cp inventory/hosts.example.yml inventory/hosts.yml
+# Edit inventory/hosts.yml using the example above and your actual VM/media values.
+ssh -p 2029 pxeadmin@127.0.0.1
+# Exit the SSH session after confirming login and accepting the correct host key.
+ansible -i inventory/hosts.yml pxe_servers -m ansible.builtin.ping --ask-pass
+ansible-playbook -i inventory/hosts.yml site.yml --syntax-check
+# If Windows is in pxe_media (as in the defaults), enter a separate 12+ character share password:
+read -r -s -p 'PXE SMB password: ' PXE_SMB_PASSWORD
+printf '\n'
+export PXE_SMB_PASSWORD
+ansible-playbook -i inventory/hosts.yml site.yml --check --diff --ask-pass --ask-become-pass
+ansible-playbook -i inventory/hosts.yml site.yml --ask-pass --ask-become-pass
+unset PXE_SMB_PASSWORD
+```
+
+At `SSH password:`, type the password for `pxeadmin`. At `BECOME password:`, type that account's sudo password; it is often the same password on a new Ubuntu VM. Ansible hides input at both prompts. If the VM uses SSH keys, omit `--ask-pass`; keep `--ask-become-pass` unless sudo is passwordless. Do not place `ansible_password` or `ansible_become_password` in the tracked example inventory.
+
+If your selected media includes Windows, set `PXE_SMB_PASSWORD` before the playbook check and deployment commands. This is the password WinPE will request for the Windows installation share, separate from the VM's SSH/sudo password.
 
 Authenticated SMB is the default. When Windows media is selected, enter a password of at least 12 characters through a transient environment variable:
 
